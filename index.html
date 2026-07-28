@@ -1,0 +1,1314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Waypoints</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+
+<style>
+  :root{
+    --ink:#212C25;
+    --paper:#EFEADA;
+    --paper-2:#E4DDC8;
+    --line:#C9BFA0;
+    --brass:#B07F2E;
+    --brass-dark:#8E6521;
+    --forest:#3C6E58;
+    --forest-dark:#2A4F40;
+    --rust:#A2492C;
+    --white:#FBF9F2;
+    --shadow: 0 2px 10px rgba(33,44,37,0.12);
+    --radius: 3px;
+  }
+  *{box-sizing:border-box;}
+  body,html{margin:0;padding:0;height:100%;overflow:hidden;}
+  .wp-root{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    height:100%;
+    width:100%;
+    display:flex;
+    flex-direction:column;
+    position:relative;
+  }
+  .wp-view{
+    flex:1;
+    min-height:0;
+    display:flex;
+    flex-direction:column;
+  }
+  .wp-view.scrollable{ overflow-y:auto; }
+  .wp-view.fixed{ overflow:hidden; }
+  .wp-header{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    padding:22px 28px 14px 28px;
+    border-bottom:2px solid var(--ink);
+    flex-wrap:wrap;
+    gap:12px;
+  }
+  .wp-title{
+    font-family:'Fraunces',serif;
+    font-optical-sizing:auto;
+    font-weight:600;
+    font-size:28px;
+    letter-spacing:-0.01em;
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+  }
+  .wp-title small{
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;
+    font-weight:500;
+    color:var(--forest-dark);
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    background:var(--paper-2);
+    border:1px solid var(--line);
+    padding:3px 7px;
+    border-radius:20px;
+  }
+  .wp-tabs{
+    display:flex;
+    gap:2px;
+    background:var(--paper-2);
+    border:1px solid var(--line);
+    border-radius:20px;
+    padding:3px;
+  }
+  .wp-tab{
+    font-family:'Inter',sans-serif;
+    font-weight:600;
+    font-size:13px;
+    padding:7px 16px;
+    border-radius:16px;
+    cursor:pointer;
+    border:none;
+    background:transparent;
+    color:var(--ink);
+    opacity:0.55;
+    transition:all .15s ease;
+  }
+  .wp-tab.active{
+    background:var(--ink);
+    color:var(--white);
+    opacity:1;
+  }
+  .wp-toolbar{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:14px 28px;
+    flex-wrap:wrap;
+    border-bottom:1px solid var(--line);
+  }
+  .wp-select, .wp-input{
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+    padding:7px 10px;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    background:var(--white);
+    color:var(--ink);
+  }
+  .wp-search{
+    flex:1;
+    min-width:160px;
+  }
+  .wp-btn{
+    font-family:'Inter',sans-serif;
+    font-weight:600;
+    font-size:13px;
+    padding:8px 14px;
+    border-radius:var(--radius);
+    border:1px solid var(--ink);
+    background:var(--ink);
+    color:var(--white);
+    cursor:pointer;
+    white-space:nowrap;
+    transition:transform .1s ease;
+  }
+  .wp-btn:hover{ transform:translateY(-1px); }
+  .wp-btn.ghost{
+    background:transparent;
+    color:var(--ink);
+    border:1px solid var(--line);
+  }
+  .wp-btn.danger{
+    background:transparent;
+    color:var(--rust);
+    border:1px solid var(--rust);
+  }
+  .wp-btn.small{ padding:5px 10px; font-size:12px; }
+  .wp-main{ flex:1; position:relative; min-height:480px; }
+
+  /* TABLE VIEW */
+  .wp-table-wrap{ padding:0 28px 28px 28px; overflow-x:auto; }
+  table.wp-table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+    min-width:920px;
+  }
+  table.wp-table thead th{
+    text-align:left;
+    font-family:'JetBrains Mono',monospace;
+    font-size:10.5px;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:var(--forest-dark);
+    border-bottom:2px solid var(--ink);
+    padding:8px 10px;
+    white-space:nowrap;
+  }
+  table.wp-table tbody tr{
+    border-bottom:1px solid var(--line);
+  }
+  table.wp-table tbody tr:hover{ background:rgba(176,127,46,0.08); }
+  table.wp-table td{
+    padding:10px 10px;
+    vertical-align:top;
+  }
+  .wp-place-name{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:14.5px;
+  }
+  .wp-tag{
+    display:inline-block;
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    padding:2px 7px;
+    border-radius:20px;
+    border:1px solid var(--line);
+    background:var(--paper-2);
+    white-space:nowrap;
+  }
+  .wp-tag.event{ border-color:var(--rust); color:var(--rust); }
+  .wp-tag.visited{ border-color:var(--forest); color:var(--forest-dark); background:rgba(60,110,88,0.1); }
+  .wp-tag.notvisited{ color:#7a7361; }
+  .wp-tag.free{ border-color:var(--forest); color:var(--forest-dark); background:rgba(60,110,88,0.1); }
+  .wp-tag.paid{ border-color:var(--brass); color:var(--brass-dark); background:rgba(176,127,46,0.1); }
+  .wp-notes-preview{
+    max-width:220px;
+    color:#5b5647;
+    font-size:12px;
+    line-height:1.4;
+    display:-webkit-box;
+    -webkit-line-clamp:2;
+    -webkit-box-orient:vertical;
+    overflow:hidden;
+  }
+  .wp-coord{
+    font-family:'JetBrains Mono',monospace;
+    font-size:11.5px;
+    color:#5b5647;
+  }
+  .wp-row-actions{ display:flex; gap:6px; }
+  .wp-empty{
+    padding:60px 28px;
+    text-align:center;
+    color:#7a7361;
+  }
+  .wp-empty .wp-empty-title{
+    font-family:'Fraunces',serif;
+    font-size:20px;
+    color:var(--ink);
+    margin-bottom:6px;
+  }
+
+  /* MAP VIEW */
+  .wp-map-layout{ display:flex; height:100%; }
+  .wp-map-side{
+    width:300px;
+    border-right:1px solid var(--line);
+    padding:18px;
+    overflow-y:auto;
+    flex-shrink:0;
+  }
+  .wp-map-side label{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10.5px;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    color:var(--forest-dark);
+    display:block;
+    margin-bottom:5px;
+    margin-top:14px;
+  }
+  .wp-map-side label:first-child{ margin-top:0; }
+  #wp-map{ flex:1; }
+  .wp-radius-val{
+    font-family:'JetBrains Mono',monospace;
+    font-weight:600;
+    color:var(--brass-dark);
+  }
+  .wp-result-item{
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:9px 10px;
+    margin-bottom:8px;
+    cursor:pointer;
+    background:var(--white);
+  }
+  .wp-result-item:hover{ border-color:var(--brass); }
+  .wp-result-name{ font-family:'Fraunces',serif; font-weight:600; font-size:13.5px; }
+  .wp-result-dist{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--forest-dark); }
+  .wp-geo-status{ font-size:11.5px; color:#7a7361; margin-top:4px; min-height:14px; }
+
+  /* MODAL */
+  .wp-modal-backdrop{
+    position:fixed; inset:0;
+    background:rgba(33,44,37,0.55);
+    display:flex; align-items:flex-start; justify-content:center;
+    padding:30px 16px;
+    overflow-y:auto;
+    z-index:50;
+  }
+  .wp-modal{
+    background:var(--white);
+    border-radius:6px;
+    width:100%;
+    max-width:560px;
+    box-shadow:var(--shadow);
+    padding:24px 26px 22px 26px;
+  }
+  .wp-modal h2{
+    font-family:'Fraunces',serif;
+    font-size:21px;
+    margin:0 0 16px 0;
+  }
+  .wp-field-row{ display:flex; gap:12px; margin-bottom:12px; }
+  .wp-field{ flex:1; display:flex; flex-direction:column; gap:5px; }
+  .wp-field label{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10.5px;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    color:var(--forest-dark);
+  }
+  .wp-field input, .wp-field select, .wp-field textarea{
+    font-family:'Inter',sans-serif;
+    font-size:13.5px;
+    padding:8px 10px;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    background:var(--paper);
+    color:var(--ink);
+  }
+  .wp-field textarea{ resize:vertical; min-height:60px; font-family:'Inter',sans-serif; }
+  .wp-toggle-row{ display:flex; gap:8px; }
+  .wp-toggle-opt{
+    flex:1;
+    text-align:center;
+    padding:8px 6px;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    font-size:12.5px;
+    font-weight:600;
+    cursor:pointer;
+    background:var(--paper);
+  }
+  .wp-toggle-opt.selected{
+    background:var(--forest);
+    border-color:var(--forest);
+    color:var(--white);
+  }
+  .wp-modal-actions{
+    display:flex; justify-content:space-between; align-items:center;
+    margin-top:18px; padding-top:14px; border-top:1px solid var(--line);
+  }
+  .wp-geo-inline{ display:flex; gap:8px; }
+  .wp-geo-inline input{ flex:1; }
+  .wp-loading{
+    padding:60px 28px; text-align:center; color:#7a7361; font-family:'JetBrains Mono',monospace; font-size:12px;
+  }
+  .leaflet-popup-content{ font-family:'Inter',sans-serif; font-size:12.5px; }
+  .leaflet-popup-content b{ font-family:'Fraunces',serif; font-size:14px; }
+
+  @media (max-width: 720px){
+    .wp-header{ padding:16px 16px 12px 16px; }
+    .wp-title{ font-size:22px; }
+    .wp-toolbar{ padding:12px 16px; }
+    .wp-table-wrap{ padding:0 8px 20px 8px; }
+    .wp-map-layout{ flex-direction:column; }
+    .wp-map-side{ width:100%; border-right:none; border-bottom:1px solid var(--line); max-height:38vh; }
+    .wp-modal{ padding:18px 16px 16px 16px; }
+    .wp-field-row{ flex-direction:column; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wp-root" id="wp-root">
+  <div class="wp-loading" id="wp-loading">Loading your waypoints…</div>
+</div>
+
+<script>
+(function(){
+  const CATS = ["Restaurant","Museum","Landmark","Church","Cafe","Park","Hotel","Shop","Other"];
+  let places = [];
+  let view = "table";
+  let editing = null; // place object being edited, or {} for new
+  let filterCat = "all";
+  let filterAdmission = "all";
+  let filterVisited = "all";
+  let searchQ = "";
+  let storageOk = true;
+
+  // map state
+  let leafletMap = null;
+  let radiusCircle = null;
+  let centerMarker = null;
+  let placeMarkers = [];
+  let searchCenter = null; // {lat,lng,label}
+  let radiusKm = 25;
+
+  const root = document.getElementById('wp-root');
+
+  function uid(){ return 'p_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
+
+  function todayStr(){
+    const d = new Date();
+    return d.toISOString().slice(0,10);
+  }
+
+  function haversine(lat1,lon1,lat2,lon2){
+    const R = 6371;
+    const dLat = (lat2-lat1) * Math.PI/180;
+    const dLon = (lon2-lon1) * Math.PI/180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
+  const LS_KEY = 'waypoints_places_v1';
+
+  async function loadPlaces(){
+    try{
+      const raw = localStorage.getItem(LS_KEY);
+      places = raw ? JSON.parse(raw) : [];
+    }catch(e){
+      places = [];
+    }
+  }
+
+  async function savePlaces(){
+    try{
+      localStorage.setItem(LS_KEY, JSON.stringify(places));
+      storageOk = true;
+    }catch(e){
+      storageOk = false;
+      alert('Could not save — your browser storage may be full or blocked (e.g. private browsing mode).');
+    }
+  }
+
+  function exportJson(){
+    const blob = new Blob([JSON.stringify(places, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'waypoints-export-' + todayStr() + '.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function importJson(file){
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try{
+        const incoming = JSON.parse(e.target.result);
+        if(!Array.isArray(incoming)) throw new Error('bad format');
+        const existingIds = new Set(places.map(p=>p.id));
+        let added = 0, updated = 0;
+        incoming.forEach(rec=>{
+          if(!rec.id) rec.id = uid();
+          if(existingIds.has(rec.id)){
+            const idx = places.findIndex(p=>p.id===rec.id);
+            places[idx] = rec;
+            updated++;
+          } else {
+            places.push(rec);
+            added++;
+          }
+        });
+        await savePlaces();
+        render();
+        alert(`Imported: ${added} added, ${updated} updated.`);
+      }catch(err){
+        alert('Could not read that file — make sure it\'s a Waypoints JSON export.');
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function escapeHtml(s){
+    if(s===undefined || s===null) return '';
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function catIcon(cat){
+    return {
+      Restaurant:'🍽', Museum:'🏛', Landmark:'📍', Church:'⛪', Cafe:'☕',
+      Park:'🌳', Hotel:'🛏', Shop:'🛍', Other:'✦'
+    }[cat] || '✦';
+  }
+
+  function render(){
+    let html = '';
+    html += renderHeader();
+    if(view === 'table'){
+      html += `<div class="wp-view scrollable">${renderToolbar()}${renderTable()}</div>`;
+    } else {
+      html += `<div class="wp-view fixed">${renderMapLayout()}</div>`;
+    }
+    if(editing !== null){
+      html += renderModal();
+    }
+    root.innerHTML = html;
+    attachHeaderEvents();
+    if(view === 'table'){
+      attachToolbarEvents();
+      attachTableEvents();
+    } else {
+      attachMapEvents();
+      initMap();
+    }
+    if(editing !== null){
+      attachModalEvents();
+    }
+  }
+
+  function renderHeader(){
+    return `
+      <div class="wp-header">
+        <div class="wp-title">Waypoints <small>${places.length} saved</small></div>
+        <div class="wp-tabs">
+          <button class="wp-tab ${view==='table'?'active':''}" data-tab="table">List</button>
+          <button class="wp-tab ${view==='map'?'active':''}" data-tab="map">Map</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderToolbar(){
+    const cats = ['all', ...CATS];
+    return `
+      <div class="wp-toolbar">
+        <input class="wp-input wp-search" id="wp-search-input" placeholder="Search name, city, notes…" value="${escapeHtml(searchQ)}"/>
+        <select class="wp-select" id="wp-filter-cat">
+          ${cats.map(c=>`<option value="${c}" ${filterCat===c?'selected':''}>${c==='all'?'All types':c}</option>`).join('')}
+        </select>
+        <select class="wp-select" id="wp-filter-visited">
+          <option value="all" ${filterVisited==='all'?'selected':''}>Visited: all</option>
+          <option value="yes" ${filterVisited==='yes'?'selected':''}>Visited</option>
+          <option value="no" ${filterVisited==='no'?'selected':''}>Not visited</option>
+        </select>
+        <select class="wp-select" id="wp-filter-admission">
+          <option value="all" ${filterAdmission==='all'?'selected':''}>Admission: all</option>
+          <option value="free" ${filterAdmission==='free'?'selected':''}>Free</option>
+          <option value="paid" ${filterAdmission==='paid'?'selected':''}>Paid</option>
+        </select>
+        <button class="wp-btn ghost small" id="wp-export-btn" title="Save all data as a .json file">Export</button>
+        <button class="wp-btn ghost small" id="wp-import-btn" title="Load a .json file">Import</button>
+        <input type="file" id="wp-import-file" accept="application/json" style="display:none;"/>
+        <button class="wp-btn" id="wp-add-btn">+ Add place</button>
+      </div>
+    `;
+  }
+
+  function getFiltered(){
+    return places.filter(p=>{
+      if(filterCat !== 'all' && p.category !== filterCat) return false;
+      if(filterVisited === 'yes' && !p.visited) return false;
+      if(filterVisited === 'no' && p.visited) return false;
+      if(filterAdmission !== 'all' && p.admission !== filterAdmission) return false;
+      if(searchQ){
+        const q = searchQ.toLowerCase();
+        const hay = [p.name,p.city,p.notes].join(' ').toLowerCase();
+        if(!hay.includes(q)) return false;
+      }
+      return true;
+    }).sort((a,b)=> (b.lastUpdated||'').localeCompare(a.lastUpdated||''));
+  }
+
+  function renderTable(){
+    const list = getFiltered();
+    if(places.length === 0){
+      return `<div class="wp-empty">
+        <div class="wp-empty-title">No waypoints yet</div>
+        <div>Add the first place or event you want to remember.</div>
+      </div>`;
+    }
+    if(list.length === 0){
+      return `<div class="wp-empty">
+        <div class="wp-empty-title">Nothing matches those filters</div>
+      </div>`;
+    }
+    const rows = list.map(p => {
+      const again = p.visited ? (p.wouldReturn === 'yes' ? 'Would return' : p.wouldReturn === 'no' ? 'Would skip' : 'Maybe again') : '—';
+      return `
+      <tr data-id="${p.id}">
+        <td>
+          <div class="wp-place-name">${catIcon(p.category)} ${escapeHtml(p.name)}</div>
+          ${p.website ? `<div style="font-size:11.5px;"><a href="${escapeHtml(p.website)}" target="_blank" rel="noopener" style="color:var(--forest-dark);">${escapeHtml(p.website.replace(/^https?:\/\//,'').replace(/\/$/,''))}</a></div>` : ''}
+        </td>
+        <td><span class="wp-tag">${escapeHtml(p.category)}</span> ${p.isEvent ? '<span class="wp-tag event">event</span>' : ''}</td>
+        <td>${p.admission==='free' ? '<span class="wp-tag free">Free</span>' : p.admission==='paid' ? `<span class="wp-tag paid">Paid${p.admissionPrice ? ' · '+escapeHtml(p.admissionPrice) : ''}</span>` : '—'}</td>
+        <td>${escapeHtml(p.city||'—')}</td>
+        <td class="wp-coord">${p.lat!==undefined && p.lat!=='' ? Number(p.lat).toFixed(3) : '—'}, ${p.lng!==undefined && p.lng!=='' ? Number(p.lng).toFixed(3) : '—'}</td>
+        <td>${p.isEvent ? `${escapeHtml(p.eventStart||'?')} → ${escapeHtml(p.eventEnd||'?')}` : '—'}</td>
+        <td><span class="wp-tag ${p.visited?'visited':'notvisited'}">${p.visited?'Visited':'Not yet'}</span></td>
+        <td style="font-size:12px;">${again}</td>
+        <td style="font-size:12px; text-transform:capitalize;">${escapeHtml(p.company||'—')}</td>
+        <td><div class="wp-notes-preview">${escapeHtml(p.notes||'')}</div></td>
+        <td class="wp-coord">${escapeHtml(p.lastUpdated||'—')}</td>
+        <td>
+          <div class="wp-row-actions">
+            <button class="wp-btn ghost small" data-edit="${p.id}">Edit</button>
+            <button class="wp-btn danger small" data-del="${p.id}">Del</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+    return `
+      <div class="wp-table-wrap">
+        <table class="wp-table">
+          <thead><tr>
+            <th>Name</th><th>Type</th><th>Admission</th><th>Closest city</th><th>Coordinates</th>
+            <th>Event dates</th><th>Visited</th><th>Return?</th><th>Solo/friends</th>
+            <th>Notes</th><th>Updated</th><th></th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderMapLayout(){
+    return `
+      <div class="wp-map-layout">
+        <div class="wp-map-side">
+          <label>Search a location</label>
+          <div class="wp-geo-inline">
+            <input class="wp-input" id="wp-geo-search" placeholder="e.g. Lisbon, Portugal" value="${escapeHtml(searchCenter?searchCenter.label:'')}"/>
+            <button class="wp-btn small" id="wp-geo-go">Go</button>
+          </div>
+          <div class="wp-geo-status" id="wp-geo-status">${searchCenter ? `Centered near ${escapeHtml(searchCenter.label)}` : 'Tip: you can also click the map to set a center.'}</div>
+
+          <label>Radius: <span class="wp-radius-val" id="wp-radius-val">${radiusKm} km</span></label>
+          <input type="range" id="wp-radius-slider" min="1" max="500" value="${radiusKm}" style="width:100%;"/>
+
+          <label>Within radius (${searchCenter ? getWithinRadius().length : 0})</label>
+          <div id="wp-map-results">
+            ${searchCenter ? renderMapResults() : '<div style="font-size:12px;color:#7a7361;">Search or click the map to see nearby saved places.</div>'}
+          </div>
+        </div>
+        <div id="wp-map"></div>
+      </div>
+    `;
+  }
+
+  function getWithinRadius(){
+    if(!searchCenter) return [];
+    return places.filter(p => p.lat!==undefined && p.lat!=='' && p.lng!==undefined && p.lng!=='')
+      .map(p => ({p, d: haversine(searchCenter.lat, searchCenter.lng, Number(p.lat), Number(p.lng))}))
+      .filter(x => x.d <= radiusKm)
+      .sort((a,b)=>a.d-b.d);
+  }
+
+  function renderMapResults(){
+    const within = getWithinRadius();
+    if(within.length === 0) return '<div style="font-size:12px;color:#7a7361;">No saved places in this radius.</div>';
+    return within.map(x => `
+      <div class="wp-result-item" data-focus="${x.p.id}">
+        <div class="wp-result-name">${catIcon(x.p.category)} ${escapeHtml(x.p.name)}</div>
+        <div class="wp-result-dist">${x.d.toFixed(1)} km away · ${escapeHtml(x.p.category)}</div>
+      </div>
+    `).join('');
+  }
+
+  function renderModal(){
+    const p = editing;
+    const isNew = !p.id;
+    return `
+      <div class="wp-modal-backdrop" id="wp-modal-backdrop">
+        <div class="wp-modal">
+          <h2>${isNew ? 'Add a waypoint' : 'Edit waypoint'}</h2>
+
+          <div class="wp-toggle-row" style="margin-bottom:14px;">
+            <div class="wp-toggle-opt ${!p.isEvent?'selected':''}" data-set-event="false">Place</div>
+            <div class="wp-toggle-opt ${p.isEvent?'selected':''}" data-set-event="true">Place + Event</div>
+          </div>
+
+          ${isNew ? `
+          <div class="wp-field" style="margin-bottom:14px;">
+            <label>Paste a Google Maps or website link (optional)</label>
+            <div class="wp-geo-inline">
+              <input id="f-link" placeholder="https://maps.google.com/... or https://restaurant.com"/>
+              <button class="wp-btn ghost small" id="f-link-parse" type="button">Fill in</button>
+            </div>
+            <div class="wp-geo-status" id="f-link-status"></div>
+          </div>
+          ` : ''}
+
+          <div class="wp-field-row">
+            <div class="wp-field" style="flex:2;">
+              <label>Name</label>
+              <input id="f-name" value="${escapeHtml(p.name||'')}" placeholder="e.g. Livraria Lello"/>
+            </div>
+            <div class="wp-field">
+              <label>Category</label>
+              <select id="f-category">
+                ${CATS.map(c=>`<option value="${c}" ${p.category===c?'selected':''}>${c}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+
+          <div class="wp-field-row">
+            <div class="wp-field">
+              <label>Website</label>
+              <input id="f-website" value="${escapeHtml(p.website||'')}" placeholder="https://…"/>
+            </div>
+            <div class="wp-field">
+              <label>Closest main city</label>
+              <div class="wp-geo-inline">
+                <input id="f-city" value="${escapeHtml(p.city||'')}" placeholder="e.g. Porto"/>
+                <button class="wp-btn ghost small" id="f-city-auto" type="button">Auto-fill</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="wp-field-row">
+            <div class="wp-field">
+              <label>Latitude</label>
+              <input id="f-lat" value="${p.lat!==undefined?p.lat:''}" placeholder="41.1469"/>
+            </div>
+            <div class="wp-field">
+              <label>Longitude</label>
+              <input id="f-lng" value="${p.lng!==undefined?p.lng:''}" placeholder="-8.6144"/>
+            </div>
+            <div class="wp-field" style="justify-content:flex-end;">
+              <label>&nbsp;</label>
+              <button class="wp-btn ghost small" id="f-geocode" type="button">Find coords from name</button>
+            </div>
+          </div>
+          <div class="wp-geo-status" id="f-geo-status"></div>
+
+          <div id="f-event-row" style="display:${p.isEvent?'flex':'none'};" class="wp-field-row">
+            <div class="wp-field">
+              <label>Event start</label>
+              <input type="date" id="f-event-start" value="${p.eventStart||''}"/>
+            </div>
+            <div class="wp-field">
+              <label>Event end</label>
+              <input type="date" id="f-event-end" value="${p.eventEnd||''}"/>
+            </div>
+          </div>
+
+          <div class="wp-field-row">
+            <div class="wp-field">
+              <label>Visited?</label>
+              <div class="wp-toggle-row">
+                <div class="wp-toggle-opt ${p.visited?'selected':''}" data-set-visited="true">Yes</div>
+                <div class="wp-toggle-opt ${!p.visited?'selected':''}" data-set-visited="false">No</div>
+              </div>
+            </div>
+            <div class="wp-field">
+              <label>Would return?</label>
+              <select id="f-return">
+                <option value="" ${!p.wouldReturn?'selected':''}>—</option>
+                <option value="yes" ${p.wouldReturn==='yes'?'selected':''}>Yes</option>
+                <option value="maybe" ${p.wouldReturn==='maybe'?'selected':''}>Maybe</option>
+                <option value="no" ${p.wouldReturn==='no'?'selected':''}>No</option>
+              </select>
+            </div>
+            <div class="wp-field">
+              <label>Best with</label>
+              <select id="f-company">
+                <option value="" ${!p.company?'selected':''}>—</option>
+                <option value="solo" ${p.company==='solo'?'selected':''}>Solo</option>
+                <option value="friends" ${p.company==='friends'?'selected':''}>Friends</option>
+                <option value="either" ${p.company==='either'?'selected':''}>Either</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="wp-field-row">
+            <div class="wp-field">
+              <label>Admission</label>
+              <select id="f-admission">
+                <option value="" ${!p.admission?'selected':''}>—</option>
+                <option value="free" ${p.admission==='free'?'selected':''}>Free</option>
+                <option value="paid" ${p.admission==='paid'?'selected':''}>Paid</option>
+              </select>
+            </div>
+            <div class="wp-field" id="f-admission-price-wrap" style="display:${p.admission==='paid'?'flex':'none'}; flex:2;">
+              <label>Price / details</label>
+              <input id="f-admission-price" value="${escapeHtml(p.admissionPrice||'')}" placeholder="e.g. $15, free on Sundays"/>
+            </div>
+          </div>
+
+          <div class="wp-field">
+            <label>Notes</label>
+            <textarea id="f-notes" placeholder="Anything you want to remember…">${escapeHtml(p.notes||'')}</textarea>
+          </div>
+
+          <div class="wp-modal-actions">
+            <div>${!isNew ? `<button class="wp-btn danger small" id="f-delete">Delete waypoint</button>` : '<span></span>'}</div>
+            <div style="display:flex; gap:8px;">
+              <button class="wp-btn ghost" id="f-cancel">Cancel</button>
+              <button class="wp-btn" id="f-save">Save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // ---------- events ----------
+
+  function attachHeaderEvents(){
+    root.querySelectorAll('[data-tab]').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        view = el.getAttribute('data-tab');
+        render();
+      });
+    });
+  }
+
+  function attachToolbarEvents(){
+    const s = document.getElementById('wp-search-input');
+    if(s) s.addEventListener('input', e=>{ searchQ = e.target.value; refreshTableOnly(); });
+    const fc = document.getElementById('wp-filter-cat');
+    if(fc) fc.addEventListener('change', e=>{ filterCat = e.target.value; refreshTableOnly(); });
+    const fv = document.getElementById('wp-filter-visited');
+    if(fv) fv.addEventListener('change', e=>{ filterVisited = e.target.value; refreshTableOnly(); });
+    const fa = document.getElementById('wp-filter-admission');
+    if(fa) fa.addEventListener('change', e=>{ filterAdmission = e.target.value; refreshTableOnly(); });
+    const add = document.getElementById('wp-add-btn');
+    if(add) add.addEventListener('click', ()=>{ editing = {}; render(); });
+
+    const exportBtn = document.getElementById('wp-export-btn');
+    if(exportBtn) exportBtn.addEventListener('click', exportJson);
+    const importBtn = document.getElementById('wp-import-btn');
+    const importFile = document.getElementById('wp-import-file');
+    if(importBtn) importBtn.addEventListener('click', ()=> importFile.click());
+    if(importFile) importFile.addEventListener('change', e=>{
+      if(e.target.files && e.target.files[0]) importJson(e.target.files[0]);
+      e.target.value = '';
+    });
+  }
+
+  function refreshTableOnly(){
+    const wrap = document.querySelector('.wp-table-wrap') || document.querySelector('.wp-empty');
+    if(wrap) wrap.outerHTML = renderTable();
+    attachTableEvents();
+  }
+
+  function attachTableEvents(){
+    root.querySelectorAll('[data-edit]').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        const id = el.getAttribute('data-edit');
+        editing = Object.assign({}, places.find(p=>p.id===id));
+        render();
+      });
+    });
+    root.querySelectorAll('[data-del]').forEach(el=>{
+      el.addEventListener('click', async ()=>{
+        const id = el.getAttribute('data-del');
+        if(confirm('Delete this waypoint? This cannot be undone.')){
+          places = places.filter(p=>p.id!==id);
+          await savePlaces();
+          render();
+        }
+      });
+    });
+  }
+
+  function attachModalEvents(){
+    const backdrop = document.getElementById('wp-modal-backdrop');
+    backdrop.addEventListener('click', e=>{ if(e.target===backdrop){ editing=null; render(); } });
+
+    root.querySelectorAll('[data-set-event]').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        editing.isEvent = el.getAttribute('data-set-event') === 'true';
+        document.querySelectorAll('[data-set-event]').forEach(x=>x.classList.remove('selected'));
+        el.classList.add('selected');
+        document.getElementById('f-event-row').style.display = editing.isEvent ? 'flex' : 'none';
+      });
+    });
+    root.querySelectorAll('[data-set-visited]').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        editing.visited = el.getAttribute('data-set-visited') === 'true';
+        el.parentElement.querySelectorAll('[data-set-visited]').forEach(x=>x.classList.remove('selected'));
+        el.classList.add('selected');
+      });
+    });
+
+    document.getElementById('f-admission').addEventListener('change', e=>{
+      document.getElementById('f-admission-price-wrap').style.display = e.target.value === 'paid' ? 'flex' : 'none';
+    });
+
+    const linkParseBtn = document.getElementById('f-link-parse');
+    if(linkParseBtn){
+      linkParseBtn.addEventListener('click', ()=>{
+        const raw = document.getElementById('f-link').value;
+        const statusEl = document.getElementById('f-link-status');
+        const result = parseLocationLink(raw);
+        const nameEl = document.getElementById('f-name');
+        if(result.type === 'empty'){
+          statusEl.textContent = 'Paste a link first.';
+        } else if(result.type === 'invalid'){
+          statusEl.textContent = "That doesn't look like a valid link.";
+        } else if(result.type === 'shortlink'){
+          statusEl.textContent = "Shortened Google Maps links can't be read directly — open it once, then paste the full address-bar URL instead.";
+        } else if(result.type === 'maps'){
+          document.getElementById('f-lat').value = result.lat.toFixed(5);
+          document.getElementById('f-lng').value = result.lng.toFixed(5);
+          if(result.name && !nameEl.value) nameEl.value = result.name;
+          statusEl.textContent = 'Filled in coordinates' + (result.name ? ' and name' : '') + ' from the link.';
+          maybeAutoFillCity();
+          maybeAutoFillWebsite(result.lat, result.lng);
+        } else if(result.type === 'maps-no-coords'){
+          if(result.name && !nameEl.value) nameEl.value = result.name;
+          statusEl.textContent = "Found the link but no coordinates in it — try \"Find coords from name\" below.";
+        } else if(result.type === 'website'){
+          document.getElementById('f-website').value = result.url;
+          if(!nameEl.value) nameEl.value = result.nameGuess;
+          statusEl.textContent = 'Filled in the website' + (result.nameGuess ? ' and guessed a name' : '') + ' — add coordinates separately.';
+        }
+      });
+    }
+
+    const cityAutoBtn = document.getElementById('f-city-auto');
+    if(cityAutoBtn){
+      cityAutoBtn.addEventListener('click', async ()=>{
+        const lat = parseFloat(document.getElementById('f-lat').value);
+        const lng = parseFloat(document.getElementById('f-lng').value);
+        const statusEl = document.getElementById('f-geo-status');
+        if(isNaN(lat) || isNaN(lng)){ statusEl.textContent = 'Enter coordinates first.'; return; }
+        statusEl.textContent = 'Looking up nearest major city…';
+        try{
+          const result = await findNearestMajorCity(lat, lng);
+          if(result){
+            document.getElementById('f-city').value = result.name;
+            if(result.isFallback){
+              statusEl.textContent = `Set to ${result.name} (city lookup service was unavailable, so this is approximate).`;
+            } else if(result.isTown){
+              statusEl.textContent = `No major city within range — nearest town is ${result.name} (${result.distanceKm.toFixed(0)} km away).`;
+            } else {
+              statusEl.textContent = `Set to ${result.name} (${result.distanceKm.toFixed(0)} km away).`;
+            }
+          } else {
+            statusEl.textContent = 'Could not find a nearby city or town.';
+          }
+        }catch(e){
+          statusEl.textContent = 'Lookup failed — try again.';
+        }
+      });
+    }
+
+    document.getElementById('f-geocode').addEventListener('click', async ()=>{
+      const name = document.getElementById('f-name').value.trim();
+      const city = document.getElementById('f-city').value.trim();
+      const q = [name, city].filter(Boolean).join(', ');
+      const statusEl = document.getElementById('f-geo-status');
+      if(!q){ statusEl.textContent = 'Enter a name or city first.'; return; }
+      statusEl.textContent = 'Searching…';
+      try{
+        const result = await geocode(q);
+        if(result){
+          document.getElementById('f-lat').value = result.lat.toFixed(5);
+          document.getElementById('f-lng').value = result.lng.toFixed(5);
+          statusEl.textContent = `Found: ${result.label}`;
+          maybeAutoFillCity();
+          maybeAutoFillWebsite(result.lat, result.lng);
+        } else {
+          statusEl.textContent = 'No match found — enter coordinates manually.';
+        }
+      }catch(e){
+        statusEl.textContent = 'Search failed — enter coordinates manually.';
+      }
+    });
+
+    document.getElementById('f-cancel').addEventListener('click', ()=>{ editing=null; render(); });
+
+    const delBtn = document.getElementById('f-delete');
+    if(delBtn) delBtn.addEventListener('click', async ()=>{
+      if(confirm('Delete this waypoint?')){
+        places = places.filter(p=>p.id!==editing.id);
+        editing = null;
+        await savePlaces();
+        render();
+      }
+    });
+
+    document.getElementById('f-save').addEventListener('click', async ()=>{
+      const name = document.getElementById('f-name').value.trim();
+      if(!name){ alert('Please enter a name.'); return; }
+      const rec = {
+        id: editing.id || uid(),
+        name,
+        category: document.getElementById('f-category').value,
+        website: document.getElementById('f-website').value.trim(),
+        city: document.getElementById('f-city').value.trim(),
+        lat: document.getElementById('f-lat').value.trim(),
+        lng: document.getElementById('f-lng').value.trim(),
+        isEvent: !!editing.isEvent,
+        eventStart: editing.isEvent ? document.getElementById('f-event-start').value : '',
+        eventEnd: editing.isEvent ? document.getElementById('f-event-end').value : '',
+        visited: !!editing.visited,
+        wouldReturn: document.getElementById('f-return').value,
+        company: document.getElementById('f-company').value,
+        admission: document.getElementById('f-admission').value,
+        admissionPrice: document.getElementById('f-admission').value === 'paid' ? document.getElementById('f-admission-price').value.trim() : '',
+        notes: document.getElementById('f-notes').value.trim(),
+        lastUpdated: todayStr()
+      };
+      const idx = places.findIndex(p=>p.id===rec.id);
+      if(idx>=0) places[idx] = rec; else places.push(rec);
+      await savePlaces();
+      editing = null;
+      render();
+    });
+  }
+
+  function parseLocationLink(raw){
+    raw = (raw||'').trim();
+    if(!raw) return {type:'empty'};
+    let withProto = raw;
+    if(!/^https?:\/\//i.test(withProto)) withProto = 'https://' + withProto;
+    let url;
+    try{ url = new URL(withProto); }catch(e){ return {type:'invalid'}; }
+    const host = url.hostname.replace(/^www\./,'');
+
+    if(host.includes('goo.gl')){
+      return {type:'shortlink'};
+    }
+
+    if(host.includes('google.') && url.pathname.includes('/maps')){
+      let lat, lng;
+      let m = withProto.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+      if(m){ lat = parseFloat(m[1]); lng = parseFloat(m[2]); }
+      if(lat===undefined){
+        m = withProto.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+        if(m){ lat = parseFloat(m[1]); lng = parseFloat(m[2]); }
+      }
+      if(lat===undefined){
+        m = withProto.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+        if(m){ lat = parseFloat(m[1]); lng = parseFloat(m[2]); }
+      }
+      let name = null;
+      const pm = url.pathname.match(/\/place\/([^/]+)/);
+      if(pm){
+        name = decodeURIComponent(pm[1].replace(/\+/g,' '));
+      } else {
+        const q = url.searchParams.get('q');
+        if(q && !/^-?\d+\.\d+,-?\d+\.\d+$/.test(q)){
+          name = q.replace(/\+/g,' ');
+        }
+      }
+      if(lat!==undefined && lng!==undefined) return {type:'maps', lat, lng, name};
+      return {type:'maps-no-coords', name};
+    }
+
+    let nameGuess = host.split('.').slice(0,-1).join(' ').replace(/[-_]/g,' ').trim();
+    nameGuess = nameGuess.replace(/\b\w/g, c=>c.toUpperCase());
+    return {type:'website', url: withProto, nameGuess};
+  }
+
+  const OVERPASS_MIRRORS = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.openstreetmap.ru/api/interpreter'
+  ];
+
+  async function runOverpassQuery(query){
+    let lastErr = null;
+    for(const base of OVERPASS_MIRRORS){
+      try{
+        const res = await fetch(base, { method: 'POST', body: 'data=' + encodeURIComponent(query) });
+        if(!res.ok) throw new Error('overpass ' + base + ' returned ' + res.status);
+        const data = await res.json();
+        return data.elements || [];
+      }catch(e){
+        lastErr = e;
+        continue; // try next mirror
+      }
+    }
+    throw lastErr || new Error('all overpass mirrors failed');
+  }
+
+  async function queryOverpassPlaces(lat, lng, radiusM, placeTag){
+    const query = `[out:json][timeout:20];node["place"="${placeTag}"](around:${radiusM},${lat},${lng});out body;`;
+    const elements = await runOverpassQuery(query);
+    return elements.filter(el => el.tags && el.tags.name);
+  }
+
+  // Best-effort: checks OSM data right around a point for a mapped
+  // business/POI that has a website tag. Not every place is mapped this
+  // thoroughly, so absence of a result doesn't mean anything is wrong.
+  async function findWebsiteNearby(lat, lng){
+    const query = `[out:json][timeout:20];(node(around:40,${lat},${lng})["website"];node(around:40,${lat},${lng})["contact:website"];way(around:40,${lat},${lng})["website"];way(around:40,${lat},${lng})["contact:website"];);out center;`;
+    const elements = await runOverpassQuery(query);
+    let best = null, bestD = Infinity;
+    elements.forEach(el=>{
+      const site = el.tags && (el.tags.website || el.tags['contact:website']);
+      if(!site) return;
+      const elat = el.lat !== undefined ? el.lat : (el.center && el.center.lat);
+      const elng = el.lon !== undefined ? el.lon : (el.center && el.center.lon);
+      if(elat === undefined || elng === undefined) return;
+      const d = haversine(lat, lng, elat, elng);
+      if(d < bestD){ bestD = d; best = site; }
+    });
+    return best;
+  }
+
+  async function maybeAutoFillWebsite(lat, lng){
+    const websiteEl = document.getElementById('f-website');
+    if(!websiteEl || websiteEl.value.trim()) return;
+    try{
+      const site = await findWebsiteNearby(lat, lng);
+      if(site) websiteEl.value = site;
+    }catch(e){ /* silent — this is a best-effort extra, not a core feature */ }
+  }
+
+  function nearestOf(elements, lat, lng){
+    let best = null, bestD = Infinity;
+    elements.forEach(el=>{
+      const d = haversine(lat, lng, el.lat, el.lon);
+      if(d < bestD){ bestD = d; best = el; }
+    });
+    return best ? { name: best.tags.name, distanceKm: bestD } : null;
+  }
+
+  // Fallback used only if every Overpass mirror is unreachable: asks the
+  // (reliable) Nominatim reverse endpoint what administrative place contains
+  // this point. Less precise about "major" — it can return a small town —
+  // but it degrades gracefully instead of failing outright.
+  async function reverseGeocodeFallback(lat, lng){
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`;
+    const res = await fetch(url, { headers: { 'Accept':'application/json' } });
+    if(!res.ok) throw new Error('nominatim reverse failed');
+    const data = await res.json();
+    const a = data && data.address;
+    if(!a) return null;
+    const name = a.city || a.town || a.municipality || a.village || a.county;
+    return name ? { name, distanceKm: null, isTown: !a.city, isFallback: true } : null;
+  }
+
+  // Finds the nearest place OSM tags as an actual "city" (a real population
+  // center, not just any incorporated municipality), expanding the search
+  // radius outward, and falling back to the nearest "town" only if no
+  // real city is found within range. If Overpass itself is unreachable,
+  // falls back to a lower-confidence Nominatim lookup rather than failing.
+  async function findNearestMajorCity(lat, lng){
+    try{
+      for(const radiusM of [75000, 200000, 500000]){
+        const cities = await queryOverpassPlaces(lat, lng, radiusM, 'city');
+        const nearest = nearestOf(cities, lat, lng);
+        if(nearest) return { ...nearest, isTown: false };
+      }
+      const towns = await queryOverpassPlaces(lat, lng, 100000, 'town');
+      const nearestTown = nearestOf(towns, lat, lng);
+      if(nearestTown) return { ...nearestTown, isTown: true };
+      return null;
+    }catch(e){
+      return await reverseGeocodeFallback(lat, lng);
+    }
+  }
+
+  async function maybeAutoFillCity(){
+    const cityEl = document.getElementById('f-city');
+    if(!cityEl || cityEl.value.trim()) return;
+    const lat = parseFloat(document.getElementById('f-lat').value);
+    const lng = parseFloat(document.getElementById('f-lng').value);
+    if(isNaN(lat) || isNaN(lng)) return;
+    try{
+      const result = await findNearestMajorCity(lat, lng);
+      if(result) cityEl.value = result.name;
+    }catch(e){ /* silent — manual Auto-fill button still available */ }
+  }
+
+  async function geocode(query){
+    const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(query);
+    const res = await fetch(url, { headers: { 'Accept':'application/json' } });
+    if(!res.ok) throw new Error('geocode failed');
+    const data = await res.json();
+    if(!data || data.length===0) return null;
+    return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), label: data[0].display_name };
+  }
+
+  function attachMapEvents(){
+    const slider = document.getElementById('wp-radius-slider');
+    slider.addEventListener('input', e=>{
+      radiusKm = parseInt(e.target.value,10);
+      document.getElementById('wp-radius-val').textContent = radiusKm + ' km';
+      updateRadiusCircle();
+      updateResultsPanel();
+      updateMarkerVisibility();
+    });
+
+    document.getElementById('wp-geo-go').addEventListener('click', doGeoSearch);
+    document.getElementById('wp-geo-search').addEventListener('keydown', e=>{
+      if(e.key==='Enter') doGeoSearch();
+    });
+
+    bindResultClicks();
+  }
+
+  function bindResultClicks(){
+    root.querySelectorAll('[data-focus]').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        const id = el.getAttribute('data-focus');
+        const p = places.find(x=>x.id===id);
+        if(p && leafletMap){
+          leafletMap.setView([Number(p.lat), Number(p.lng)], 13);
+          const marker = placeMarkers.find(m=>m._wpId===id);
+          if(marker) marker.openPopup();
+        }
+      });
+    });
+  }
+
+  async function doGeoSearch(){
+    const q = document.getElementById('wp-geo-search').value.trim();
+    const statusEl = document.getElementById('wp-geo-status');
+    if(!q) return;
+    statusEl.textContent = 'Searching…';
+    try{
+      const result = await geocode(q);
+      if(result){
+        searchCenter = { lat: result.lat, lng: result.lng, label: result.label.split(',').slice(0,2).join(',') };
+        statusEl.textContent = `Centered near ${searchCenter.label}`;
+        leafletMap.setView([searchCenter.lat, searchCenter.lng], 9);
+        setCenterMarker();
+        updateRadiusCircle();
+        updateResultsPanel();
+        updateMarkerVisibility();
+      } else {
+        statusEl.textContent = 'No match found.';
+      }
+    }catch(e){
+      statusEl.textContent = 'Search failed. Try again.';
+    }
+  }
+
+  function updateResultsPanel(){
+    const el = document.getElementById('wp-map-results');
+    if(el) el.innerHTML = searchCenter ? renderMapResults() : '<div style="font-size:12px;color:#7a7361;">Search or click the map to see nearby saved places.</div>';
+    bindResultClicks();
+    const label = document.querySelector('.wp-map-side label[for=""]');
+    // update count label
+    const countLabel = [...document.querySelectorAll('.wp-map-side label')].find(l=>l.textContent.startsWith('Within radius'));
+    if(countLabel) countLabel.textContent = `Within radius (${searchCenter ? getWithinRadius().length : 0})`;
+  }
+
+  function setCenterMarker(){
+    if(!leafletMap || !searchCenter) return;
+    if(centerMarker) leafletMap.removeLayer(centerMarker);
+    centerMarker = L.marker([searchCenter.lat, searchCenter.lng], {
+      icon: L.divIcon({ className:'', html:'<div style="background:#A2492C;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 2px #A2492C;"></div>', iconSize:[14,14] })
+    }).addTo(leafletMap);
+  }
+
+  function updateRadiusCircle(){
+    if(!leafletMap || !searchCenter) return;
+    if(radiusCircle) leafletMap.removeLayer(radiusCircle);
+    radiusCircle = L.circle([searchCenter.lat, searchCenter.lng], {
+      radius: radiusKm * 1000,
+      color: '#B07F2E',
+      weight: 1.5,
+      fillColor: '#B07F2E',
+      fillOpacity: 0.08
+    }).addTo(leafletMap);
+  }
+
+  function updateMarkerVisibility(){
+    placeMarkers.forEach(m=>{
+      const within = !searchCenter || haversine(searchCenter.lat, searchCenter.lng, m._wpLat, m._wpLng) <= radiusKm;
+      const el = m.getElement();
+      if(el) el.style.opacity = within ? '1' : '0.25';
+    });
+  }
+
+  let mapResizeHandler = null;
+
+  function initMap(){
+    if(leafletMap){ leafletMap.remove(); leafletMap=null; }
+    if(mapResizeHandler){
+      window.removeEventListener('resize', mapResizeHandler);
+      window.removeEventListener('orientationchange', mapResizeHandler);
+      mapResizeHandler = null;
+    }
+    placeMarkers = [];
+    leafletMap = L.map('wp-map', { zoomControl:true }).setView([20,0], 2);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+      subdomains: 'abcd',
+      maxZoom: 19
+    }).addTo(leafletMap);
+
+    const withCoords = places.filter(p=>p.lat!==undefined && p.lat!=='' && p.lng!==undefined && p.lng!=='');
+    if(withCoords.length){
+      const bounds = [];
+      withCoords.forEach(p=>{
+        const lat = Number(p.lat), lng = Number(p.lng);
+        const marker = L.marker([lat,lng]).addTo(leafletMap);
+        marker._wpId = p.id; marker._wpLat = lat; marker._wpLng = lng;
+        marker.bindPopup(`<b>${escapeHtml(p.name)}</b><br>${escapeHtml(p.category)}${p.city? ' · '+escapeHtml(p.city):''}${p.admission==='free' ? ' · Free' : p.admission==='paid' ? ' · Paid' + (p.admissionPrice? ' ('+escapeHtml(p.admissionPrice)+')' : '') : ''}${p.website? `<br><a href="${escapeHtml(p.website)}" target="_blank">website</a>`:''}`);
+        placeMarkers.push(marker);
+        bounds.push([lat,lng]);
+      });
+      if(!searchCenter) leafletMap.fitBounds(bounds, { padding:[30,30], maxZoom: 12 });
+    }
+
+    if(searchCenter){
+      setCenterMarker();
+      updateRadiusCircle();
+      updateMarkerVisibility();
+      leafletMap.setView([searchCenter.lat, searchCenter.lng], leafletMap.getZoom());
+    }
+
+    leafletMap.on('click', e=>{
+      searchCenter = { lat: e.latlng.lat, lng: e.latlng.lng, label: `${e.latlng.lat.toFixed(3)}, ${e.latlng.lng.toFixed(3)}` };
+      document.getElementById('wp-geo-search').value = '';
+      document.getElementById('wp-geo-status').textContent = `Centered at ${searchCenter.label}`;
+      setCenterMarker();
+      updateRadiusCircle();
+      updateResultsPanel();
+      updateMarkerVisibility();
+    });
+
+    // Leaflet measures its container at creation time; if that happened
+    // before the surrounding flex layout finished settling (very common
+    // right after a tab switch, and especially on mobile where the
+    // viewport/address bar can still be resolving), the map can end up
+    // sized or tiled wrong. Re-check shortly after mount, and keep
+    // re-checking on resize/orientation change.
+    setTimeout(()=>{ if(leafletMap) leafletMap.invalidateSize(); }, 60);
+    setTimeout(()=>{ if(leafletMap) leafletMap.invalidateSize(); }, 300);
+    mapResizeHandler = () => { if(leafletMap) leafletMap.invalidateSize(); };
+    window.addEventListener('resize', mapResizeHandler);
+    window.addEventListener('orientationchange', mapResizeHandler);
+  }
+
+  // ---------- boot ----------
+  (async function init(){
+    await loadPlaces();
+    render();
+  })();
+
+})();
+</script>
+</body>
+</html>
