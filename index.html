@@ -8,6 +8,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
 
 <style>
   :root{
@@ -357,6 +359,7 @@
   let places = [];
   let view = "table";
   let editing = null; // place object being edited, or {} for new
+  let syncSettingsOpen = false;
   let filterCat = "all";
   let filterAdmission = "all";
   let filterVisited = "all";
@@ -389,6 +392,123 @@
   }
 
   const LS_KEY = 'waypoints_places_v1';
+  const LS_FIREBASE_CONFIG_KEY = 'waypoints_firebase_config';
+  const LS_SYNC_CODE_KEY = 'waypoints_sync_code';
+
+  let syncEnabled = false;
+  let syncStatus = 'off'; // 'off' | 'connecting' | 'connected' | 'error'
+  let dbRef = null;
+  let syncCode = localStorage.getItem(LS_SYNC_CODE_KEY) || '';
+
+  function genSyncCode(){
+    if(window.crypto && crypto.randomUUID) return crypto.randomUUID().replace(/-/g,'').slice(0,20);
+    return 'wp' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  }
+
+  function getStoredFirebaseConfig(){
+    try{
+      const raw = localStorage.getItem(LS_FIREBASE_CONFIG_KEY);
+      return raw ? JSON.parse(raw) : null;
+    }catch(e){ return null; }
+  }
+
+  // The Firebase console gives you a JS snippet, not clean JSON — usually
+  // something like:
+  //   const firebaseConfig = {
+  //     apiKey: "...",
+  //     databaseURL: "https://...",
+  //     // ...
+  //   };
+  // This pulls just the object out of that and coerces it into valid JSON:
+  // strips a leading "const x = " / "export default" and trailing ";",
+  // strips // and /* */ comments, quotes bare keys, converts single quotes
+  // and backticks to double quotes, and drops trailing commas.
+  function parseFirebaseConfigInput(raw){
+    let text = raw.trim();
+
+    // Try strict JSON first — covers the case where it's already clean.
+    try{ return JSON.parse(text); }catch(e){ /* fall through to cleanup below */ }
+
+    // Isolate just the {...} object if there's surrounding JS around it.
+    const firstBrace = text.indexOf('{');
+    const lastBrace = text.lastIndexOf('}');
+    if(firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace){
+      text = text.slice(firstBrace, lastBrace + 1);
+    }
+
+    text = text
+      .replace(/\/\*[\s\S]*?\*\//g, '')        // block comments
+      .replace(/(^|[^:])\/\/.*$/gm, '$1')       // line comments (avoid eating "https://")
+      .replace(/`/g, '"')                       // template literals -> strings
+      .replace(/'/g, '"')                        // single quotes -> double
+      .replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:/g, '$1"$2":') // bare keys -> quoted
+      .replace(/,(\s*[}\]])/g, '$1');           // trailing commas
+
+    try{ return JSON.parse(text); }
+    catch(e){ return null; }
+  }
+
+  // Connects (or reconnects) to Firebase Realtime Database using whatever
+  // config + sync code are currently stored. Safe to call more than once
+  // for a sync-code change (just re-points the listener); if the Firebase
+  // config itself changes, the settings panel asks for a page reload
+  // instead of trying to hot-swap the underlying Firebase app.
+  function initSync(){
+    if(dbRef){ dbRef.off(); dbRef = null; }
+    const config = getStoredFirebaseConfig();
+    if(!config || !config.databaseURL){
+      syncEnabled = false;
+      syncStatus = 'off';
+      renderSyncBadge();
+      return;
+    }
+    if(!syncCode){
+      syncCode = genSyncCode();
+      localStorage.setItem(LS_SYNC_CODE_KEY, syncCode);
+    }
+    try{
+      if(!firebase.apps || !firebase.apps.length){
+        firebase.initializeApp(config);
+      }
+      syncStatus = 'connecting';
+      renderSyncBadge();
+      dbRef = firebase.database().ref('waypoints/' + syncCode + '/places');
+      dbRef.on('value', snapshot => {
+        const val = snapshot.val() || {};
+        places = Object.keys(val).map(k => val[k]);
+        try{ localStorage.setItem(LS_KEY, JSON.stringify(places)); }catch(e){}
+        syncEnabled = true;
+        syncStatus = 'connected';
+        render();
+      }, err => {
+        syncStatus = 'error';
+        syncEnabled = false;
+        renderSyncBadge();
+      });
+    }catch(e){
+      syncStatus = 'error';
+      syncEnabled = false;
+      renderSyncBadge();
+    }
+  }
+
+  function renderSyncBadge(){
+    const el = document.getElementById('wp-sync-badge');
+    if(el){
+      el.outerHTML = syncBadgeHtml();
+      const fresh = document.getElementById('wp-sync-badge');
+      if(fresh) fresh.addEventListener('click', ()=>{ syncSettingsOpen = true; render(); });
+    }
+  }
+
+  function syncBadgeHtml(){
+    const label = syncStatus === 'connected' ? 'Synced'
+      : syncStatus === 'connecting' ? 'Connecting…'
+      : syncStatus === 'error' ? 'Sync error'
+      : 'Sync: off';
+    const cls = syncStatus === 'connected' ? 'free' : syncStatus === 'error' ? 'paid' : '';
+    return `<button class="wp-tag ${cls}" id="wp-sync-badge" style="cursor:pointer; appearance:none; -webkit-appearance:none; outline:none; font-family:'JetBrains Mono',monospace; font-size:10px; padding:2px 7px;">${label}</button>`;
+  }
 
   async function loadPlaces(){
     try{
@@ -399,7 +519,8 @@
     }
   }
 
-  async function savePlaces(){
+  // Local-only fallback save, used when sync isn't configured/connected.
+  async function savePlacesLocalOnly(){
     try{
       localStorage.setItem(LS_KEY, JSON.stringify(places));
       storageOk = true;
@@ -407,6 +528,41 @@
       storageOk = false;
       alert('Could not save — your browser storage may be full or blocked (e.g. private browsing mode).');
     }
+  }
+
+  // Adds or updates one place. Updates the local array immediately so the
+  // UI feels instant, then pushes to Firebase if connected (the realtime
+  // listener will reconcile shortly after), or falls back to a full
+  // local-only save otherwise.
+  async function upsertPlace(rec){
+    const idx = places.findIndex(p=>p.id===rec.id);
+    if(idx>=0) places[idx] = rec; else places.push(rec);
+    if(syncEnabled && dbRef){
+      try{ await dbRef.child(rec.id).set(rec); return; }catch(e){ /* fall through to local save */ }
+    }
+    await savePlacesLocalOnly();
+  }
+
+  async function deletePlace(id){
+    places = places.filter(p=>p.id!==id);
+    if(syncEnabled && dbRef){
+      try{ await dbRef.child(id).remove(); return; }catch(e){ /* fall through to local save */ }
+    }
+    await savePlacesLocalOnly();
+  }
+
+  async function bulkUpsert(records){
+    records.forEach(rec=>{
+      if(!rec.id) rec.id = uid();
+      const idx = places.findIndex(p=>p.id===rec.id);
+      if(idx>=0) places[idx] = rec; else places.push(rec);
+    });
+    if(syncEnabled && dbRef){
+      const updates = {};
+      records.forEach(rec=>{ updates[rec.id] = rec; });
+      try{ await dbRef.update(updates); return; }catch(e){ /* fall through to local save */ }
+    }
+    await savePlacesLocalOnly();
   }
 
   function exportJson(){
@@ -431,16 +587,9 @@
         let added = 0, updated = 0;
         incoming.forEach(rec=>{
           if(!rec.id) rec.id = uid();
-          if(existingIds.has(rec.id)){
-            const idx = places.findIndex(p=>p.id===rec.id);
-            places[idx] = rec;
-            updated++;
-          } else {
-            places.push(rec);
-            added++;
-          }
+          if(existingIds.has(rec.id)) updated++; else added++;
         });
-        await savePlaces();
+        await bulkUpsert(incoming);
         render();
         alert(`Imported: ${added} added, ${updated} updated.`);
       }catch(err){
@@ -473,6 +622,9 @@
     if(editing !== null){
       html += renderModal();
     }
+    if(syncSettingsOpen){
+      html += renderSyncModal();
+    }
     root.innerHTML = html;
     attachHeaderEvents();
     if(view === 'table'){
@@ -485,12 +637,15 @@
     if(editing !== null){
       attachModalEvents();
     }
+    if(syncSettingsOpen){
+      attachSyncModalEvents();
+    }
   }
 
   function renderHeader(){
     return `
       <div class="wp-header">
-        <div class="wp-title">Waypoints <small>${places.length} saved</small></div>
+        <div class="wp-title">Waypoints <small>${places.length} saved</small> ${syncBadgeHtml()}</div>
         <div class="wp-tabs">
           <button class="wp-tab ${view==='table'?'active':''}" data-tab="table">List</button>
           <button class="wp-tab ${view==='map'?'active':''}" data-tab="map">Map</button>
@@ -774,6 +929,54 @@
     `;
   }
 
+  function renderSyncModal(){
+    const hasConfig = !!getStoredFirebaseConfig();
+    return `
+      <div class="wp-modal-backdrop" id="wp-sync-modal-backdrop">
+        <div class="wp-modal">
+          <h2>Sync settings</h2>
+
+          ${!hasConfig ? `
+            <p style="font-size:13px; color:#5b5647; line-height:1.5;">
+              Not connected yet. Paste your Firebase project's config object below (from the Firebase console → Project settings → your web app → SDK setup and configuration → "Config"). It looks like <code>{ apiKey: "...", databaseURL: "...", ... }</code>.
+            </p>
+            <div class="wp-field">
+              <label>Firebase config</label>
+              <textarea id="f-firebase-config" placeholder='{"apiKey":"...","authDomain":"...","databaseURL":"...","projectId":"..."}' style="min-height:110px; font-family:'JetBrains Mono',monospace; font-size:12px;"></textarea>
+            </div>
+            <div class="wp-geo-status" id="f-sync-status"></div>
+            <div class="wp-modal-actions">
+              <div></div>
+              <div style="display:flex; gap:8px;">
+                <button class="wp-btn ghost" id="f-sync-cancel">Close</button>
+                <button class="wp-btn" id="f-sync-save-config">Connect</button>
+              </div>
+            </div>
+          ` : `
+            <p style="font-size:13px; color:#5b5647; line-height:1.5;">
+              Connected. Enter this <b>same code</b> in Sync settings on your other devices to keep them all in sync — anyone who has it can read and write this data, so keep it private, same as a password.
+            </p>
+            <div class="wp-field">
+              <label>Your sync code</label>
+              <div class="wp-geo-inline">
+                <input id="f-sync-code" value="${escapeHtml(syncCode)}" style="font-family:'JetBrains Mono',monospace;"/>
+                <button class="wp-btn ghost small" id="f-sync-copy" type="button">Copy</button>
+              </div>
+            </div>
+            <div class="wp-geo-status" id="f-sync-status">Status: ${syncStatus === 'connected' ? 'connected and syncing' : syncStatus}</div>
+            <div class="wp-modal-actions">
+              <div><button class="wp-btn danger small" id="f-sync-forget">Disconnect this device</button></div>
+              <div style="display:flex; gap:8px;">
+                <button class="wp-btn ghost" id="f-sync-cancel">Close</button>
+                <button class="wp-btn" id="f-sync-use-code">Use this code</button>
+              </div>
+            </div>
+          `}
+        </div>
+      </div>
+    `;
+  }
+
   // ---------- events ----------
 
   function attachHeaderEvents(){
@@ -783,6 +986,8 @@
         render();
       });
     });
+    const syncBadge = document.getElementById('wp-sync-badge');
+    if(syncBadge) syncBadge.addEventListener('click', ()=>{ syncSettingsOpen = true; render(); });
   }
 
   function attachToolbarEvents(){
@@ -826,8 +1031,7 @@
       el.addEventListener('click', async ()=>{
         const id = el.getAttribute('data-del');
         if(confirm('Delete this waypoint? This cannot be undone.')){
-          places = places.filter(p=>p.id!==id);
-          await savePlaces();
+          await deletePlace(id);
           render();
         }
       });
@@ -945,9 +1149,9 @@
     const delBtn = document.getElementById('f-delete');
     if(delBtn) delBtn.addEventListener('click', async ()=>{
       if(confirm('Delete this waypoint?')){
-        places = places.filter(p=>p.id!==editing.id);
+        const idToDelete = editing.id;
         editing = null;
-        await savePlaces();
+        await deletePlace(idToDelete);
         render();
       }
     });
@@ -974,9 +1178,7 @@
         notes: document.getElementById('f-notes').value.trim(),
         lastUpdated: todayStr()
       };
-      const idx = places.findIndex(p=>p.id===rec.id);
-      if(idx>=0) places[idx] = rec; else places.push(rec);
-      await savePlaces();
+      await upsertPlace(rec);
       editing = null;
       render();
     });
@@ -1137,6 +1339,75 @@
       const result = await findNearestMajorCity(lat, lng);
       if(result) cityEl.value = result.name;
     }catch(e){ /* silent — manual Auto-fill button still available */ }
+  }
+
+  function attachSyncModalEvents(){
+    const backdrop = document.getElementById('wp-sync-modal-backdrop');
+    if(backdrop) backdrop.addEventListener('click', e=>{ if(e.target===backdrop){ syncSettingsOpen=false; render(); } });
+
+    const cancelBtn = document.getElementById('f-sync-cancel');
+    if(cancelBtn) cancelBtn.addEventListener('click', ()=>{ syncSettingsOpen=false; render(); });
+
+    const saveConfigBtn = document.getElementById('f-sync-save-config');
+    if(saveConfigBtn){
+      saveConfigBtn.addEventListener('click', ()=>{
+        const statusEl = document.getElementById('f-sync-status');
+        const raw = document.getElementById('f-firebase-config').value.trim();
+        if(!raw){ statusEl.textContent = 'Paste your Firebase config first.'; return; }
+        const parsed = parseFirebaseConfigInput(raw);
+        if(!parsed){ statusEl.textContent = "Couldn't read that — make sure it's the config object from Firebase."; return; }
+        if(!parsed.databaseURL){
+          statusEl.textContent = 'That config is missing a databaseURL — make sure Realtime Database is set up in Firebase first, then copy the URL from its page and add it as "databaseURL" in the config.';
+          return;
+        }
+        localStorage.setItem(LS_FIREBASE_CONFIG_KEY, JSON.stringify(parsed));
+        statusEl.textContent = 'Saved — connecting…';
+        initSync();
+        setTimeout(()=>{ render(); }, 400);
+      });
+    }
+
+    const copyBtn = document.getElementById('f-sync-copy');
+    if(copyBtn){
+      copyBtn.addEventListener('click', async ()=>{
+        const input = document.getElementById('f-sync-code');
+        try{
+          await navigator.clipboard.writeText(input.value);
+          copyBtn.textContent = 'Copied!';
+          setTimeout(()=>{ copyBtn.textContent = 'Copy'; }, 1500);
+        }catch(e){
+          input.select();
+        }
+      });
+    }
+
+    const useCodeBtn = document.getElementById('f-sync-use-code');
+    if(useCodeBtn){
+      useCodeBtn.addEventListener('click', ()=>{
+        const newCode = document.getElementById('f-sync-code').value.trim();
+        const statusEl = document.getElementById('f-sync-status');
+        if(!newCode){ statusEl.textContent = 'Enter a code first.'; return; }
+        if(newCode === syncCode){ statusEl.textContent = 'Already using this code.'; return; }
+        syncCode = newCode;
+        localStorage.setItem(LS_SYNC_CODE_KEY, syncCode);
+        statusEl.textContent = 'Switching…';
+        initSync();
+        setTimeout(()=>{ render(); }, 400);
+      });
+    }
+
+    const forgetBtn = document.getElementById('f-sync-forget');
+    if(forgetBtn){
+      forgetBtn.addEventListener('click', ()=>{
+        if(!confirm('Disconnect this device from sync? Your places stay saved locally on this device, but it will stop sending/receiving updates until you reconnect.')) return;
+        if(dbRef){ dbRef.off(); dbRef = null; }
+        localStorage.removeItem(LS_FIREBASE_CONFIG_KEY);
+        syncEnabled = false;
+        syncStatus = 'off';
+        syncSettingsOpen = false;
+        render();
+      });
+    }
   }
 
   async function geocode(query){
@@ -1306,6 +1577,7 @@
   (async function init(){
     await loadPlaces();
     render();
+    initSync();
   })();
 
 })();
