@@ -363,6 +363,7 @@
   let filterCat = "all";
   let filterAdmission = "all";
   let filterVisited = "all";
+  let filterCompany = "all";
   let searchQ = "";
   let storageOk = true;
 
@@ -672,6 +673,12 @@
           <option value="free" ${filterAdmission==='free'?'selected':''}>Free</option>
           <option value="paid" ${filterAdmission==='paid'?'selected':''}>Paid</option>
         </select>
+        <select class="wp-select" id="wp-filter-company">
+          <option value="all" ${filterCompany==='all'?'selected':''}>Best with: all</option>
+          <option value="solo" ${filterCompany==='solo'?'selected':''}>Solo</option>
+          <option value="friends" ${filterCompany==='friends'?'selected':''}>Friends</option>
+          <option value="either" ${filterCompany==='either'?'selected':''}>Either</option>
+        </select>
         <button class="wp-btn ghost small" id="wp-export-btn" title="Save all data as a .json file">Export</button>
         <button class="wp-btn ghost small" id="wp-import-btn" title="Load a .json file">Import</button>
         <input type="file" id="wp-import-file" accept="application/json" style="display:none;"/>
@@ -680,19 +687,23 @@
     `;
   }
 
+  function matchesFilters(p){
+    if(filterCat !== 'all' && p.category !== filterCat) return false;
+    if(filterVisited === 'yes' && !p.visited) return false;
+    if(filterVisited === 'no' && p.visited) return false;
+    if(filterAdmission !== 'all' && p.admission !== filterAdmission) return false;
+    if(filterCompany !== 'all' && p.company !== filterCompany) return false;
+    if(searchQ){
+      const q = searchQ.toLowerCase();
+      const hay = [p.name,p.city,p.notes,p.category,p.company,p.admission].join(' ').toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  }
+
   function getFiltered(){
-    return places.filter(p=>{
-      if(filterCat !== 'all' && p.category !== filterCat) return false;
-      if(filterVisited === 'yes' && !p.visited) return false;
-      if(filterVisited === 'no' && p.visited) return false;
-      if(filterAdmission !== 'all' && p.admission !== filterAdmission) return false;
-      if(searchQ){
-        const q = searchQ.toLowerCase();
-        const hay = [p.name,p.city,p.notes].join(' ').toLowerCase();
-        if(!hay.includes(q)) return false;
-      }
-      return true;
-    }).sort((a,b)=> (b.lastUpdated||'').localeCompare(a.lastUpdated||''));
+    return places.filter(matchesFilters)
+      .sort((a,b)=> (b.lastUpdated||'').localeCompare(a.lastUpdated||''));
   }
 
   function renderTable(){
@@ -749,6 +760,7 @@
   }
 
   function renderMapLayout(){
+    const cats = ['all', ...CATS];
     return `
       <div class="wp-map-layout">
         <div class="wp-map-side">
@@ -757,10 +769,34 @@
             <input class="wp-input" id="wp-geo-search" placeholder="e.g. Lisbon, Portugal" value="${escapeHtml(searchCenter?searchCenter.label:'')}"/>
             <button class="wp-btn small" id="wp-geo-go">Go</button>
           </div>
+          <button class="wp-btn ghost small" id="wp-geo-clear" style="margin-top:8px; width:100%;">Clear pinpoint</button>
           <div class="wp-geo-status" id="wp-geo-status">${searchCenter ? `Centered near ${escapeHtml(searchCenter.label)}` : 'Tip: you can also click the map to set a center.'}</div>
 
           <label>Radius: <span class="wp-radius-val" id="wp-radius-val">${radiusKm} km</span></label>
           <input type="range" id="wp-radius-slider" min="1" max="500" value="${radiusKm}" style="width:100%;"/>
+
+          <label>Filters</label>
+          <input class="wp-input" id="wp-map-filter-search" placeholder="Keyword" value="${escapeHtml(searchQ)}" style="width:100%;"/>
+          <select class="wp-select" id="wp-map-filter-cat" style="width:100%; margin-top:8px;">
+            ${cats.map(c=>`<option value="${c}" ${filterCat===c?'selected':''}>${c==='all'?'All types':c}</option>`).join('')}
+          </select>
+          <select class="wp-select" id="wp-map-filter-visited" style="width:100%; margin-top:8px;">
+            <option value="all" ${filterVisited==='all'?'selected':''}>Visited: all</option>
+            <option value="yes" ${filterVisited==='yes'?'selected':''}>Visited</option>
+            <option value="no" ${filterVisited==='no'?'selected':''}>Not visited</option>
+          </select>
+          <select class="wp-select" id="wp-map-filter-admission" style="width:100%; margin-top:8px;">
+            <option value="all" ${filterAdmission==='all'?'selected':''}>Admission: all</option>
+            <option value="free" ${filterAdmission==='free'?'selected':''}>Free</option>
+            <option value="paid" ${filterAdmission==='paid'?'selected':''}>Paid</option>
+          </select>
+          <select class="wp-select" id="wp-map-filter-company" style="width:100%; margin-top:8px;">
+            <option value="all" ${filterCompany==='all'?'selected':''}>Best with: all</option>
+            <option value="solo" ${filterCompany==='solo'?'selected':''}>Solo</option>
+            <option value="friends" ${filterCompany==='friends'?'selected':''}>Friends</option>
+            <option value="either" ${filterCompany==='either'?'selected':''}>Either</option>
+          </select>
+          <button class="wp-btn ghost small" id="wp-map-filter-clear" style="margin-top:8px; width:100%;">Clear filters</button>
 
           <label>Within radius (${searchCenter ? getWithinRadius().length : 0})</label>
           <div id="wp-map-results">
@@ -774,7 +810,7 @@
 
   function getWithinRadius(){
     if(!searchCenter) return [];
-    return places.filter(p => p.lat!==undefined && p.lat!=='' && p.lng!==undefined && p.lng!=='')
+    return getFiltered().filter(p => p.lat!==undefined && p.lat!=='' && p.lng!==undefined && p.lng!=='')
       .map(p => ({p, d: haversine(searchCenter.lat, searchCenter.lng, Number(p.lat), Number(p.lng))}))
       .filter(x => x.d <= radiusKm)
       .sort((a,b)=>a.d-b.d);
@@ -999,6 +1035,8 @@
     if(fv) fv.addEventListener('change', e=>{ filterVisited = e.target.value; refreshTableOnly(); });
     const fa = document.getElementById('wp-filter-admission');
     if(fa) fa.addEventListener('change', e=>{ filterAdmission = e.target.value; refreshTableOnly(); });
+    const fco = document.getElementById('wp-filter-company');
+    if(fco) fco.addEventListener('change', e=>{ filterCompany = e.target.value; refreshTableOnly(); });
     const add = document.getElementById('wp-add-btn');
     if(add) add.addEventListener('click', ()=>{ editing = {}; render(); });
 
@@ -1433,8 +1471,80 @@
     document.getElementById('wp-geo-search').addEventListener('keydown', e=>{
       if(e.key==='Enter') doGeoSearch();
     });
+    const clearGeoBtn = document.getElementById('wp-geo-clear');
+    if(clearGeoBtn) clearGeoBtn.addEventListener('click', clearSearchCenter);
+
+    const mapFilterSearch = document.getElementById('wp-map-filter-search');
+    if(mapFilterSearch) mapFilterSearch.addEventListener('input', e=>{
+      searchQ = e.target.value;
+      updateResultsPanel();
+      updateMarkerVisibility();
+    });
+
+    const mapFilterCat = document.getElementById('wp-map-filter-cat');
+    if(mapFilterCat) mapFilterCat.addEventListener('change', e=>{
+      filterCat = e.target.value;
+      updateResultsPanel();
+      updateMarkerVisibility();
+    });
+
+    const mapFilterVisited = document.getElementById('wp-map-filter-visited');
+    if(mapFilterVisited) mapFilterVisited.addEventListener('change', e=>{
+      filterVisited = e.target.value;
+      updateResultsPanel();
+      updateMarkerVisibility();
+    });
+
+    const mapFilterAdmission = document.getElementById('wp-map-filter-admission');
+    if(mapFilterAdmission) mapFilterAdmission.addEventListener('change', e=>{
+      filterAdmission = e.target.value;
+      updateResultsPanel();
+      updateMarkerVisibility();
+    });
+
+    const mapFilterCompany = document.getElementById('wp-map-filter-company');
+    if(mapFilterCompany) mapFilterCompany.addEventListener('change', e=>{
+      filterCompany = e.target.value;
+      updateResultsPanel();
+      updateMarkerVisibility();
+    });
+
+    const clearBtn = document.getElementById('wp-map-filter-clear');
+    if(clearBtn) clearBtn.addEventListener('click', ()=>{
+      searchQ = '';
+      filterCat = 'all';
+      filterVisited = 'all';
+      filterAdmission = 'all';
+      filterCompany = 'all';
+      const fSearch = document.getElementById('wp-map-filter-search');
+      const fCat = document.getElementById('wp-map-filter-cat');
+      const fVisited = document.getElementById('wp-map-filter-visited');
+      const fAdmission = document.getElementById('wp-map-filter-admission');
+      const fCompany = document.getElementById('wp-map-filter-company');
+      if(fSearch) fSearch.value = '';
+      if(fCat) fCat.value = 'all';
+      if(fVisited) fVisited.value = 'all';
+      if(fAdmission) fAdmission.value = 'all';
+      if(fCompany) fCompany.value = 'all';
+      updateResultsPanel();
+      updateMarkerVisibility();
+    });
 
     bindResultClicks();
+  }
+
+  function clearSearchCenter(){
+    searchCenter = null;
+    if(centerMarker && leafletMap) leafletMap.removeLayer(centerMarker);
+    if(radiusCircle && leafletMap) leafletMap.removeLayer(radiusCircle);
+    centerMarker = null;
+    radiusCircle = null;
+    const geoInput = document.getElementById('wp-geo-search');
+    if(geoInput) geoInput.value = '';
+    const statusEl = document.getElementById('wp-geo-status');
+    if(statusEl) statusEl.textContent = 'Tip: you can also click the map to set a center.';
+    updateResultsPanel();
+    updateMarkerVisibility();
   }
 
   function bindResultClicks(){
@@ -1506,9 +1616,14 @@
 
   function updateMarkerVisibility(){
     placeMarkers.forEach(m=>{
+      const inFilters = matchesFilters(m._wpPlace || {});
       const within = !searchCenter || haversine(searchCenter.lat, searchCenter.lng, m._wpLat, m._wpLng) <= radiusKm;
-      const el = m.getElement();
-      if(el) el.style.opacity = within ? '1' : '0.25';
+      const visible = inFilters && within;
+      const isOnMap = leafletMap && leafletMap.hasLayer(m);
+      if(leafletMap){
+        if(visible && !isOnMap) m.addTo(leafletMap);
+        if(!visible && isOnMap) m.remove();
+      }
     });
   }
 
@@ -1522,11 +1637,17 @@
       mapResizeHandler = null;
     }
     placeMarkers = [];
-    leafletMap = L.map('wp-map', { zoomControl:true }).setView([20,0], 2);
+    leafletMap = L.map('wp-map', {
+      zoomControl:true,
+      worldCopyJump:true,
+      maxBounds:[[-85, -180], [85, 180]],
+      maxBoundsViscosity:1.0
+    }).setView([20,0], 2);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
       attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
       subdomains: 'abcd',
-      maxZoom: 19
+      maxZoom: 19,
+      noWrap: true
     }).addTo(leafletMap);
 
     const withCoords = places.filter(p=>p.lat!==undefined && p.lat!=='' && p.lng!==undefined && p.lng!=='');
@@ -1536,12 +1657,15 @@
         const lat = Number(p.lat), lng = Number(p.lng);
         const marker = L.marker([lat,lng]).addTo(leafletMap);
         marker._wpId = p.id; marker._wpLat = lat; marker._wpLng = lng;
+        marker._wpPlace = p;
         marker.bindPopup(`<b>${escapeHtml(p.name)}</b><br>${escapeHtml(p.category)}${p.city? ' · '+escapeHtml(p.city):''}${p.admission==='free' ? ' · Free' : p.admission==='paid' ? ' · Paid' + (p.admissionPrice? ' ('+escapeHtml(p.admissionPrice)+')' : '') : ''}${p.website? `<br><a href="${escapeHtml(p.website)}" target="_blank">website</a>`:''}`);
         placeMarkers.push(marker);
-        bounds.push([lat,lng]);
+        if(matchesFilters(p)) bounds.push([lat,lng]);
       });
-      if(!searchCenter) leafletMap.fitBounds(bounds, { padding:[30,30], maxZoom: 12 });
+      if(!searchCenter && bounds.length) leafletMap.fitBounds(bounds, { padding:[30,30], maxZoom: 12 });
     }
+
+    updateMarkerVisibility();
 
     if(searchCenter){
       setCenterMarker();
