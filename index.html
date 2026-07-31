@@ -272,7 +272,7 @@
     display:flex; align-items:flex-start; justify-content:center;
     padding:30px 16px;
     overflow-y:auto;
-    z-index:50;
+    z-index:2000;
   }
   .wp-modal{
     background:var(--white);
@@ -613,6 +613,9 @@
   }
 
   function render(){
+    const preservedMapView = (view === 'map' && leafletMap)
+      ? { center: leafletMap.getCenter(), zoom: leafletMap.getZoom() }
+      : null;
     let html = '';
     html += renderHeader();
     if(view === 'table'){
@@ -633,7 +636,7 @@
       attachTableEvents();
     } else {
       attachMapEvents();
-      initMap();
+      initMap(preservedMapView);
     }
     if(editing !== null){
       attachModalEvents();
@@ -825,6 +828,15 @@
         <div class="wp-result-dist">${x.d.toFixed(1)} km away · ${escapeHtml(x.p.category)}</div>
       </div>
     `).join('');
+  }
+
+  function popupHtml(p){
+    const visitedText = p.visited ? 'Visited' : 'Not yet visited';
+    const admissionText = p.admission === 'free' ? 'Free'
+      : p.admission === 'paid' ? `Paid${p.admissionPrice ? ' (' + escapeHtml(p.admissionPrice) + ')' : ''}`
+      : 'Unknown';
+    const companyText = p.company ? p.company.charAt(0).toUpperCase() + p.company.slice(1) : 'Any';
+    return `<b>${escapeHtml(p.name)}</b><br>${escapeHtml(p.category)}${p.city ? ' · ' + escapeHtml(p.city) : ''}<br>${visitedText} · ${admissionText} · ${escapeHtml(companyText)}${p.notes ? `<br>${escapeHtml(p.notes)}` : ''}${p.website ? `<br><a href="${escapeHtml(p.website)}" target="_blank" rel="noopener">website</a>` : ''}<br><button class="wp-btn ghost small" data-open-place="${p.id}" type="button" style="margin-top:8px;">Open details</button>`;
   }
 
   function renderModal(){
@@ -1561,6 +1573,23 @@
     });
   }
 
+  function attachMapPopupEvents(){
+    if(!leafletMap) return;
+    leafletMap.on('popupopen', e=>{
+      const popupEl = e.popup && e.popup.getElement();
+      if(!popupEl) return;
+      const detailBtn = popupEl.querySelector('[data-open-place]');
+      if(!detailBtn) return;
+      detailBtn.addEventListener('click', ()=>{
+        const id = detailBtn.getAttribute('data-open-place');
+        const place = places.find(x=>x.id===id);
+        if(!place) return;
+        editing = Object.assign({}, place);
+        render();
+      });
+    });
+  }
+
   async function doGeoSearch(){
     const q = document.getElementById('wp-geo-search').value.trim();
     const statusEl = document.getElementById('wp-geo-status');
@@ -1629,7 +1658,7 @@
 
   let mapResizeHandler = null;
 
-  function initMap(){
+  function initMap(preservedMapView){
     if(leafletMap){ leafletMap.remove(); leafletMap=null; }
     if(mapResizeHandler){
       window.removeEventListener('resize', mapResizeHandler);
@@ -1658,12 +1687,14 @@
         const marker = L.marker([lat,lng]).addTo(leafletMap);
         marker._wpId = p.id; marker._wpLat = lat; marker._wpLng = lng;
         marker._wpPlace = p;
-        marker.bindPopup(`<b>${escapeHtml(p.name)}</b><br>${escapeHtml(p.category)}${p.city? ' · '+escapeHtml(p.city):''}${p.admission==='free' ? ' · Free' : p.admission==='paid' ? ' · Paid' + (p.admissionPrice? ' ('+escapeHtml(p.admissionPrice)+')' : '') : ''}${p.website? `<br><a href="${escapeHtml(p.website)}" target="_blank">website</a>`:''}`);
+        marker.bindPopup(popupHtml(p));
         placeMarkers.push(marker);
         if(matchesFilters(p)) bounds.push([lat,lng]);
       });
       if(!searchCenter && bounds.length) leafletMap.fitBounds(bounds, { padding:[30,30], maxZoom: 12 });
     }
+
+    attachMapPopupEvents();
 
     updateMarkerVisibility();
 
@@ -1672,6 +1703,10 @@
       updateRadiusCircle();
       updateMarkerVisibility();
       leafletMap.setView([searchCenter.lat, searchCenter.lng], leafletMap.getZoom());
+    }
+
+    if(preservedMapView && preservedMapView.center && Number.isFinite(preservedMapView.zoom)){
+      leafletMap.setView([preservedMapView.center.lat, preservedMapView.center.lng], preservedMapView.zoom, { animate:false });
     }
 
     leafletMap.on('click', e=>{
