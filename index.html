@@ -355,7 +355,11 @@
 
 <script>
 (function(){
-  const CATS = ["Restaurant","Museum","Landmark","Church","Cafe","Park","Hotel","Shop","Other"];
+  const CATS = [
+    "Restaurant","Museum","Landmark","Church","Cafe","Park","Hotel","Shop",
+    "Terrace","Lookout","Hiking Trail","Port/Harbour","Unesco Heritage Site","Michelin Guided",
+    "Other"
+  ];
   let places = [];
   let view = "table";
   let editing = null; // place object being edited, or {} for new
@@ -608,7 +612,9 @@
   function catIcon(cat){
     return {
       Restaurant:'🍽', Museum:'🏛', Landmark:'📍', Church:'⛪', Cafe:'☕',
-      Park:'🌳', Hotel:'🛏', Shop:'🛍', Other:'✦'
+      Park:'🌳', Hotel:'🛏', Shop:'🛍', Terrace:'🌅', Lookout:'🔭',
+      'Hiking Trail':'🥾', 'Port/Harbour':'⚓', 'Unesco Heritage Site':'🏛️', 'Michelin Guided':'⭐',
+      Other:'✦'
     }[cat] || '✦';
   }
 
@@ -1623,6 +1629,16 @@
     if(countLabel) countLabel.textContent = `Within radius (${searchCenter ? getWithinRadius().length : 0})`;
   }
 
+  function createMapMarkerIcon(place){
+    const color = place && place.visited ? '#C23B2B' : '#2F6FDE';
+    return L.divIcon({
+      className:'',
+      html:`<div style="background:${color};width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 2px ${color};"></div>`,
+      iconSize:[14,14],
+      iconAnchor:[7,7]
+    });
+  }
+
   function setCenterMarker(){
     if(!leafletMap || !searchCenter) return;
     if(centerMarker) leafletMap.removeLayer(centerMarker);
@@ -1684,7 +1700,7 @@
       const bounds = [];
       withCoords.forEach(p=>{
         const lat = Number(p.lat), lng = Number(p.lng);
-        const marker = L.marker([lat,lng]).addTo(leafletMap);
+        const marker = L.marker([lat,lng], { icon: createMapMarkerIcon(p) }).addTo(leafletMap);
         marker._wpId = p.id; marker._wpLat = lat; marker._wpLng = lng;
         marker._wpPlace = p;
         marker.bindPopup(popupHtml(p));
